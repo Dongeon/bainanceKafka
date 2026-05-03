@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+bin/
+*.jar
+*.war
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+out/
+
+# Claude
+.claude/
+
+# OS
+.DS_Store
+
+# Frontend
+frontend/crypto-dashboard/node_modules/
+frontend/crypto-dashboard/dist/
+frontend/stitch_k_crypto_dashboard/

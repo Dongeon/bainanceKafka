@@ -1,0 +1,42 @@
+package org.example;
+
+import org.example.kafka.KlineConsumer;
+import org.example.kafka.TickerConsumer;
+import org.example.service.KlineRepository;
+import org.example.service.TickerRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class Main {
+
+    private static final Logger log = LoggerFactory.getLogger(Main.class);
+
+    private static final String KAFKA_BOOTSTRAP_SERVERS   = "localhost:9092";
+    private static final String TICKER_CONSUMER_GROUP     = "bainance-consumer-group";
+    private static final String KLINE_CONSUMER_GROUP      = "bainance-kline-consumer-group";
+
+    private static final String DB_URL      = "jdbc:mariadb://localhost:33061/bainance?serverTimezone=Asia/Seoul";
+    private static final String DB_USER     = "deadde";
+    private static final String DB_PASSWORD = "qwer1234";
+
+    public static void main(String[] args) {
+        TickerRepository tickerRepo = new TickerRepository(DB_URL, DB_USER, DB_PASSWORD);
+        KlineRepository  klineRepo  = new KlineRepository(DB_URL, DB_USER, DB_PASSWORD);
+
+        TickerConsumer tickerConsumer = new TickerConsumer(KAFKA_BOOTSTRAP_SERVERS, TICKER_CONSUMER_GROUP, tickerRepo);
+        KlineConsumer  klineConsumer  = new KlineConsumer(KAFKA_BOOTSTRAP_SERVERS, KLINE_CONSUMER_GROUP, klineRepo);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            log.info("Shutting down...");
+            tickerConsumer.close();
+            klineConsumer.close();
+            tickerRepo.close();
+            klineRepo.close();
+        }));
+
+        // kline consumer는 별도 스레드에서 실행, ticker consumer는 메인 스레드에서 블로킹
+        Thread klineThread = new Thread(klineConsumer, "kline-consumer");
+        klineThread.start();
+        tickerConsumer.run();
+    }
+}
