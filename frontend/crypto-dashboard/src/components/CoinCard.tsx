@@ -35,11 +35,11 @@ export default function CoinCard({ ticker, flash }: Props) {
   const navigate = useNavigate();
   const [history, setHistory] = useState<number[]>([]);
   const coin = COINS.find(c => c.symbol === ticker.symbol);
-  const isUp = parseFloat(ticker.priceChangePercent) >= 0;
+  const isUp = parseFloat(ticker.priceChangePct) >= 0;
 
   useEffect(() => {
     fetchTickerHistory(ticker.symbol, 30)
-      .then(data => setHistory(data.map(t => parseFloat(t.price))))
+      .then(data => setHistory(data.map(t => parseFloat(t.lastPrice))))
       .catch(() => {});
   }, [ticker.symbol]);
 
@@ -61,18 +61,18 @@ export default function CoinCard({ ticker, flash }: Props) {
             <p className="text-[11px] text-text-secondary">{coin?.name}</p>
           </div>
         </div>
-        <PriceBadge percent={ticker.priceChangePercent} />
+        <PriceBadge percent={ticker.priceChangePct} />
       </div>
 
       <div className="mb-1">
-        <span className="text-[22px] font-bold text-text-primary tracking-tight">{fmtPrice(ticker.price)}</span>
+        <span className="text-[22px] font-bold text-text-primary tracking-tight">{fmtPrice(ticker.lastPrice)}</span>
       </div>
 
       <Sparkline data={history} isUp={isUp} />
 
       <div className="flex justify-between mt-1 text-[11px] text-text-secondary">
         <span>거래량 24h</span>
-        <span>{parseFloat(ticker.volume).toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+        <span>{parseFloat(ticker.baseVolume).toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
       </div>
 
       <div

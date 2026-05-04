@@ -1,10 +1,11 @@
 export interface Ticker {
   symbol: string;
-  price: string;
+  lastPrice: string;
   priceChange: string;
-  priceChangePercent: string;
-  volume: string;
-  createdAt: string;
+  priceChangePct: string;
+  baseVolume: string;
+  createdAt?: string;
+  eventTime?: string;
 }
 
 export interface Kline {

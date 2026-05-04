@@ -33,9 +33,9 @@ export default function HomePage() {
   useEffect(() => {
     const newFlash: Record<string, boolean> = {};
     Object.entries(tickers).forEach(([sym, t]) => {
-      if (prevPrices.current[sym] !== t.price) {
+      if (prevPrices.current[sym] !== t.lastPrice) {
         newFlash[sym] = true;
-        prevPrices.current[sym] = t.price;
+        prevPrices.current[sym] = t.lastPrice;
       }
     });
     if (Object.keys(newFlash).length) {
@@ -45,8 +45,8 @@ export default function HomePage() {
   }, [tickers]);
 
   const merged = { ...initial, ...tickers };
-  const upCount   = Object.values(merged).filter(t => parseFloat(t.priceChangePercent) >= 0).length;
-  const downCount = Object.values(merged).filter(t => parseFloat(t.priceChangePercent) < 0).length;
+  const upCount   = Object.values(merged).filter(t => parseFloat(t.priceChangePct) >= 0).length;
+  const downCount = Object.values(merged).filter(t => parseFloat(t.priceChangePct) < 0).length;
 
   return (
     <main className="max-w-7xl mx-auto px-4 md:px-6 pt-6 pb-24 md:pb-12">
