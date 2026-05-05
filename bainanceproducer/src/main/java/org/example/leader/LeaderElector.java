@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -51,10 +52,12 @@ public class LeaderElector {
     private final Runnable onActivate;
     private final Runnable onDeactivate;
 
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "leader-elector");
-        t.setDaemon(true);
-        return t;
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(r, "leader-elector");
+            t.setDaemon(true);
+            return t;
+        }
     });
 
     public LeaderElector(String instanceId,

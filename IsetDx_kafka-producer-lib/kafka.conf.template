@@ -1,0 +1,67 @@
+# =============================================================================
+# kafka-producer-lib 설정 파일 템플릿
+# 이 파일을 복사해 kafka.conf로 사용하고, 환경에 맞게 값을 수정하세요.
+# =============================================================================
+
+
+# ── Kafka 브로커 연결 ─────────────────────────────────────────────────────────
+# kafka.* 항목은 Kafka 클라이언트에 직접 pass-through됩니다.
+# Kafka 공식 문서의 모든 Producer 설정을 여기서 사용할 수 있습니다.
+
+kafka.bootstrap.servers=localhost:9092
+
+
+# ── 보안 (SASL_SSL 표준) ────────────────────────────────────────────────────
+# 개발 환경에서는 아래 보안 설정을 제거하고 kafka.bootstrap.servers만 사용하세요.
+
+kafka.security.protocol=SASL_SSL
+
+kafka.sasl.mechanism=SCRAM-SHA-256
+kafka.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required \
+  username="myuser" \
+  password="mypassword";
+
+# TLS 인증서 (브로커 CA 검증용)
+kafka.ssl.truststore.location=/etc/kafka/ssl/truststore.jks
+kafka.ssl.truststore.password=changeit
+
+# 클라이언트 인증서 (mutual TLS 사용 시)
+# kafka.ssl.keystore.location=/etc/kafka/ssl/keystore.jks
+# kafka.ssl.keystore.password=changeit
+
+
+# ── Kafka Producer 튜닝 ────────────────────────────────────────────────────
+# acks=1: Leader 확인만 (실시간 스트리밍 권장)
+# acks=all: 모든 ISR 확인 (결제/주문 등 유실 불허 상황)
+kafka.acks=1
+
+# 배치 전송 최적화 (linger.ms 동안 대기하며 배치를 채움)
+kafka.linger.ms=10
+kafka.batch.size=16384
+
+# 압축 (lz4: 속도/압축률 균형, snappy: CPU 부하 낮음, none: 압축 없음)
+kafka.compression.type=lz4
+
+# 재시도 (일시적 브로커 장애 대응)
+kafka.retries=3
+kafka.retry.backoff.ms=1000
+
+
+# ── 라이브러리 동작 설정 ────────────────────────────────────────────────────
+# 아래 항목은 Kafka 클라이언트로 전달되지 않는 라이브러리 전용 설정입니다.
+
+# 파티션 키 필드 (조건 6: A+C 혼합)
+# JSON 페이로드에서 이 필드 값을 파티션 키로 사용합니다.
+# 비워두면 Kafka가 라운드로빈으로 파티션을 분배합니다.
+kafka.partition.key.field=symbol
+
+# 전송 실패 정책 (조건 7)
+# log_and_skip : 오류 로그만 남기고 메시지 폐기 (실시간 스트리밍 권장)
+# dead_letter  : 실패 메시지를 kafka.error.topic으로 전송 (재처리 가능)
+kafka.error.policy=log_and_skip
+# kafka.error.topic=my-topic-error   # dead_letter 선택 시 필수
+
+# 기본 전송 모드 (조건 8)
+# async : 즉시 리턴, 결과는 내부 콜백 처리 → 고처리량 스트리밍 권장
+# sync  : 브로커 응답까지 블로킹 → 결제/주문 등 전송 확인 필요 시
+kafka.send.mode=async

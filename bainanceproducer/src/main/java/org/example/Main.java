@@ -7,9 +7,12 @@ import org.example.handler.KlineEventHandler;
 import org.example.handler.TickerEventHandler;
 import org.example.kafka.KafkaKlineProducer;
 import org.example.kafka.KafkaTickerProducer;
+import org.example.leader.HeartbeatMessage;
 import org.example.leader.HeartbeatPublisher;
 import org.example.leader.HeartbeatWatcher;
 import org.example.leader.LeaderElector;
+
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,37 +74,54 @@ public class Main {
         BinanceKlineWebSocketClient klineClient  = new BinanceKlineWebSocketClient(klineSymbols, KLINE_INTERVALS, klineHandler);
 
         // ── 리더 선출 ─────────────────────────────────────────────────────────
-        // 람다에서 leaderElector 참조를 위한 배열 래퍼 (effectively final 우회)
-        LeaderElector[] ref = new LeaderElector[1];
+        final LeaderElector[] ref = new LeaderElector[1];
+        final String fInstanceId  = instanceId;
+        final BinanceWebSocketClient      fTickerClient = tickerClient;
+        final BinanceKlineWebSocketClient fKlineClient  = klineClient;
 
         HeartbeatPublisher publisher = new HeartbeatPublisher(KAFKA_BOOTSTRAP_SERVERS, instanceId);
         HeartbeatWatcher   watcher   = new HeartbeatWatcher(KAFKA_BOOTSTRAP_SERVERS, instanceId,
-                msg -> ref[0].onForeignHeartbeat(msg));
+                new Consumer<HeartbeatMessage>() {
+                    public void accept(HeartbeatMessage msg) {
+                        ref[0].onForeignHeartbeat(msg);
+                    }
+                });
 
         ref[0] = new LeaderElector(
                 instanceId,
                 publisher,
                 watcher,
-                () -> {                             // onActivate: STANDBY → ACTIVE
-                    log.info("[{}] ACTIVE — Binance WebSocket 연결 시작", instanceId);
-                    tickerClient.connect();
-                    klineClient.connect();
+                new Runnable() {
+                    public void run() {
+                        log.info("[{}] ACTIVE — Binance WebSocket 연결 시작", fInstanceId);
+                        fTickerClient.connect();
+                        fKlineClient.connect();
+                    }
                 },
-                () -> {                             // onDeactivate: ACTIVE → STANDBY
-                    log.info("[{}] STANDBY — Binance WebSocket 연결 해제", instanceId);
-                    tickerClient.disconnect();
-                    klineClient.disconnect();
+                new Runnable() {
+                    public void run() {
+                        log.info("[{}] STANDBY — Binance WebSocket 연결 해제", fInstanceId);
+                        fTickerClient.disconnect();
+                        fKlineClient.disconnect();
+                    }
                 }
         );
 
         // ── 종료 훅 ───────────────────────────────────────────────────────────
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            log.info("[{}] Shutting down...", instanceId);
-            ref[0].shutdown();
-            tickerHandler.shutdown();
-            tickerKafka.close();
-            klineHandler.shutdown();
-            klineKafka.close();
+        final TickerEventHandler  fTickerHandler = tickerHandler;
+        final KafkaTickerProducer fTickerKafka   = tickerKafka;
+        final KlineEventHandler   fKlineHandler  = klineHandler;
+        final KafkaKlineProducer  fKlineKafka    = klineKafka;
+
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+            public void run() {
+                log.info("[{}] Shutting down...", fInstanceId);
+                ref[0].shutdown();
+                fTickerHandler.shutdown();
+                fTickerKafka.close();
+                fKlineHandler.shutdown();
+                fKlineKafka.close();
+            }
         }));
 
         ref[0].start();

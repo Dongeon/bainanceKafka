@@ -68,10 +68,11 @@ public class TickerEventHandler {
      * 60초 동안 이 로그가 출력되지 않으면 연결 문제나 프로세스 중단을 의심해야 한다.
      */
     private void startStatusLogger() {
-        statusScheduler.scheduleAtFixedRate(() ->
-            log.info("[STATUS] 정상 수신 중 — 누적 전송 {}건", messageCount.get()),
-            STATUS_INTERVAL_SEC, STATUS_INTERVAL_SEC, TimeUnit.SECONDS
-        );
+        statusScheduler.scheduleAtFixedRate(new Runnable() {
+            public void run() {
+                log.info("[STATUS] 정상 수신 중 — 누적 전송 {}건", messageCount.get());
+            }
+        }, STATUS_INTERVAL_SEC, STATUS_INTERVAL_SEC, TimeUnit.SECONDS);
     }
 
     /**

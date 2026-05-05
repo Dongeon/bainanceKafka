@@ -41,10 +41,11 @@ public class KlineEventHandler {
     }
 
     private void startStatusLogger() {
-        statusScheduler.scheduleAtFixedRate(() ->
-            log.info("[KLINE STATUS] 전송 {}건 / 스킵(미확정) {}건", sentCount.get(), skippedCount.get()),
-            STATUS_INTERVAL_SEC, STATUS_INTERVAL_SEC, TimeUnit.SECONDS
-        );
+        statusScheduler.scheduleAtFixedRate(new Runnable() {
+            public void run() {
+                log.info("[KLINE STATUS] 전송 {}건 / 스킵(미확정) {}건", sentCount.get(), skippedCount.get());
+            }
+        }, STATUS_INTERVAL_SEC, STATUS_INTERVAL_SEC, TimeUnit.SECONDS);
     }
 
     public void shutdown() {

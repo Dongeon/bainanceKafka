@@ -26,12 +26,18 @@ public class Main {
         TickerConsumer tickerConsumer = new TickerConsumer(KAFKA_BOOTSTRAP_SERVERS, TICKER_CONSUMER_GROUP, tickerRepo);
         KlineConsumer  klineConsumer  = new KlineConsumer(KAFKA_BOOTSTRAP_SERVERS, KLINE_CONSUMER_GROUP, klineRepo);
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            log.info("Shutting down...");
-            tickerConsumer.close();
-            klineConsumer.close();
-            tickerRepo.close();
-            klineRepo.close();
+        final TickerConsumer fTickerConsumer = tickerConsumer;
+        final KlineConsumer  fKlineConsumer  = klineConsumer;
+        final TickerRepository fTickerRepo   = tickerRepo;
+        final KlineRepository  fKlineRepo    = klineRepo;
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+            public void run() {
+                log.info("Shutting down...");
+                fTickerConsumer.close();
+                fKlineConsumer.close();
+                fTickerRepo.close();
+                fKlineRepo.close();
+            }
         }));
 
         // kline consumer는 별도 스레드에서 실행, ticker consumer는 메인 스레드에서 블로킹

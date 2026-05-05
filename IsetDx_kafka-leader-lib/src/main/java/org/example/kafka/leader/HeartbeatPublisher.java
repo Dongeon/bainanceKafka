@@ -1,53 +1,51 @@
-package org.example.leader;
+package org.example.kafka.leader;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 /**
- * ACTIVE 상태일 때 5초마다 producer-heartbeat 토픽에 생존 신호를 전송한다.
+ * ACTIVE 상태일 때 주기적으로 heartbeat를 Kafka 토픽에 발행한다.
  *
- * <p>Standby 인스턴스는 이 메시지를 HeartbeatWatcher로 구독하여
- * 15초 이상 수신이 없으면 Active 인스턴스가 죽었다고 판단한다.
+ * <p>생명주기:
+ * <pre>
+ *   start()  → ACTIVE 전환 시 호출. 즉시 첫 heartbeat 전송 후 주기 반복.
+ *   stop()   → STANDBY 전환 시 호출. 스케줄러만 중단, Kafka 연결 유지.
+ *   close()  → 종료 시 호출. 스케줄러 중단 + Kafka 연결 닫음.
+ * </pre>
  */
-public class HeartbeatPublisher {
+class HeartbeatPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(HeartbeatPublisher.class);
-    static final String TOPIC = "producer-heartbeat";
-    private static final long INTERVAL_SEC = 5;
 
     private final KafkaProducer<String, String> producer;
     private final ObjectMapper mapper = new ObjectMapper();
     private final String instanceId;
+    private final int    weight;
+    private final String topic;
+    private final long   intervalSec;
 
     private ScheduledExecutorService scheduler;
 
-    public HeartbeatPublisher(String bootstrapServers, String instanceId) {
-        this.instanceId = instanceId;
-
-        Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.ACKS_CONFIG, "1");
-        props.put(ProducerConfig.LINGER_MS_CONFIG, "0");
-        this.producer = new KafkaProducer<>(props);
+    HeartbeatPublisher(LeaderSettings settings) {
+        this.instanceId  = settings.instanceId();
+        this.weight      = settings.instanceWeight();
+        this.topic       = settings.heartbeatTopic();
+        this.intervalSec = settings.heartbeatIntervalSec();
+        this.producer    = new KafkaProducer<>(settings.toProducerProperties());
     }
 
-    /** ACTIVE 전환 시 호출 — 즉시 첫 heartbeat 전송 후 5초 주기로 반복 */
-    public void start() {
+    /** ACTIVE 전환 시 호출. 즉시 첫 heartbeat 전송 후 intervalSec 주기로 반복. */
+    void start() {
         scheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
             public Thread newThread(Runnable r) {
                 Thread t = new Thread(r, "heartbeat-publisher");
@@ -59,19 +57,20 @@ public class HeartbeatPublisher {
             public void run() {
                 send();
             }
-        }, 0, INTERVAL_SEC, TimeUnit.SECONDS);
-        log.info("[{}] HeartbeatPublisher started", instanceId);
+        }, 0, intervalSec, TimeUnit.SECONDS);
+        log.info("[{}] HeartbeatPublisher started (interval={}s, weight={})", instanceId, intervalSec, weight);
     }
 
-    /** STANDBY 전환 또는 종료 시 호출 — 스케줄러만 멈추고 Kafka 연결은 유지 */
-    public void stop() {
+    /** STANDBY 전환 시 호출. 스케줄러만 중단하고 Kafka 연결은 유지한다. */
+    void stop() {
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.shutdownNow();
             log.info("[{}] HeartbeatPublisher stopped", instanceId);
         }
     }
 
-    public void close() {
+    /** 완전 종료. stop() 후 Kafka 연결을 닫는다. */
+    void close() {
         stop();
         producer.flush();
         producer.close();
@@ -79,9 +78,9 @@ public class HeartbeatPublisher {
 
     private void send() {
         try {
-            HeartbeatMessage msg = new HeartbeatMessage(instanceId, System.currentTimeMillis());
-            String json = mapper.writeValueAsString(msg);
-            producer.send(new ProducerRecord<>(TOPIC, instanceId, json), new Callback() {
+            HeartbeatMessage msg  = new HeartbeatMessage(instanceId, System.currentTimeMillis(), weight);
+            String           json = mapper.writeValueAsString(msg);
+            producer.send(new ProducerRecord<>(topic, instanceId, json), new Callback() {
                 public void onCompletion(RecordMetadata meta, Exception ex) {
                     if (ex != null) log.error("[{}] Heartbeat send failed: {}", instanceId, ex.getMessage());
                 }

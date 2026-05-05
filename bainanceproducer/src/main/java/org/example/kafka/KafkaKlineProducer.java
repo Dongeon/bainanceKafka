@@ -44,12 +44,14 @@ public class KafkaKlineProducer implements AutoCloseable {
         String value = serialize(event);
 
         ProducerRecord<String, String> record = new ProducerRecord<>(TOPIC, key, value);
-        producer.send(record, (metadata, ex) -> {
-            if (ex != null) {
-                log.error("Failed to send [{}]: {}", key, ex.getMessage());
-            } else {
-                log.debug("Sent [{}] → partition={} offset={}",
-                        key, metadata.partition(), metadata.offset());
+        producer.send(record, new Callback() {
+            public void onCompletion(RecordMetadata metadata, Exception ex) {
+                if (ex != null) {
+                    log.error("Failed to send [{}]: {}", key, ex.getMessage());
+                } else {
+                    log.debug("Sent [{}] → partition={} offset={}",
+                            key, metadata.partition(), metadata.offset());
+                }
             }
         });
     }

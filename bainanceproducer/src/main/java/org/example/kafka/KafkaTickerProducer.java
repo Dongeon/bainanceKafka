@@ -90,13 +90,14 @@ public class KafkaTickerProducer implements AutoCloseable {
         ProducerRecord<String, String> record = new ProducerRecord<>(TOPIC, key, value);
 
         // 비동기 콜백: 전송 완료(또는 실패) 시 Kafka 내부 스레드에서 호출된다.
-        producer.send(record, (metadata, ex) -> {
-            if (ex != null) {
-                log.error("Failed to send [{}]: {}", key, ex.getMessage());
-            } else {
-                // debug 레벨 — 정상 전송은 로그 과부하 방지를 위해 debug로만 남긴다.
-                log.debug("Sent [{}] → topic={} partition={} offset={}",
-                        key, metadata.topic(), metadata.partition(), metadata.offset());
+        producer.send(record, new Callback() {
+            public void onCompletion(RecordMetadata metadata, Exception ex) {
+                if (ex != null) {
+                    log.error("Failed to send [{}]: {}", key, ex.getMessage());
+                } else {
+                    log.debug("Sent [{}] → topic={} partition={} offset={}",
+                            key, metadata.topic(), metadata.partition(), metadata.offset());
+                }
             }
         });
     }
