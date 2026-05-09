@@ -1,0 +1,14 @@
+# producer-1 (weight 70)
+./gradlew run --args="kafka.conf producer-1 70"
+
+# producer-2 (weight 80)
+./gradlew run --args="kafka.conf producer-2 80"
+
+# producer-3 (weight 90)
+./gradlew run --args="kafka.conf producer-3 90"
+
+# producer-4 (weight 100)
+./gradlew run --args="kafka.conf producer-4 100"
+
+각 터미널에서 /Users/deadde/projects/java_bainance/isetdxKafkaProducer 경로로 이동 후 실행하면 됩니다.
+

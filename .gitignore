@@ -17,6 +17,14 @@ out/
 # OS
 .DS_Store
 
+# 임시/비소스 파일
+ter.txt
+result.md
+make_ppt.py
+*.pptx
+iset_dx_logo.gif
+iset_dx_logo_transparent.png
+
 # Frontend
 frontend/crypto-dashboard/node_modules/
 frontend/crypto-dashboard/dist/

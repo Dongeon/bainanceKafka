@@ -31,6 +31,11 @@ public class LeaderSettings {
         this.raw = raw;
     }
 
+    /** 이미 로드된 Properties로 LeaderSettings를 생성한다 (CLI 오버라이드 등). */
+    public static LeaderSettings fromProperties(Properties props) {
+        return new LeaderSettings(props);
+    }
+
     /** 파일시스템 경로 또는 클래스패스에서 kafka.conf를 로드한다. */
     public static LeaderSettings load(String path) throws IOException {
         Properties props = new Properties();
@@ -90,6 +95,11 @@ public class LeaderSettings {
     /** ACTIVE 상태에서 heartbeat를 전송하는 주기 (초). 기본값 5. */
     public long heartbeatIntervalSec() {
         return getLong("leader.heartbeat.interval.sec", 5);
+    }
+
+    /** 상태 전환 이벤트를 발행할 Kafka 토픽. 기본값 "producer-status". */
+    public String statusEventTopic() {
+        return raw.getProperty("leader.status.topic", "producer-status").trim();
     }
 
     // ── Kafka 클라이언트 Properties 생성 ────────────────────────────────────

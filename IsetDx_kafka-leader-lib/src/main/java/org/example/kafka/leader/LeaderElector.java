@@ -66,8 +66,10 @@ public class LeaderElector {
     /** 마지막으로 외부 heartbeat를 수신한 시각 (ms). -1 = 수신 이력 없음. */
     private final AtomicLong lastForeignHeartbeatMs = new AtomicLong(-1);
 
-    private final HeartbeatPublisher publisher;
-    private final HeartbeatWatcher   watcher;
+    private final HeartbeatPublisher    publisher;
+    private final StatusEventPublisher  statusPublisher;
+    private final HeartbeatWatcher      watcher;
+    private final StatusEventWatcher    statusWatcher;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
         public Thread newThread(Runnable r) {
@@ -90,11 +92,17 @@ public class LeaderElector {
         this.prepJitterMs        = settings.prepJitterMs();
         this.activationTimeoutMs = settings.activationTimeoutMs();
 
-        this.publisher = new HeartbeatPublisher(settings);
+        this.publisher       = new HeartbeatPublisher(settings);
+        this.statusPublisher = new StatusEventPublisher(settings);
         final LeaderElector self = this;
-        this.watcher   = new HeartbeatWatcher(settings, new java.util.function.Consumer<HeartbeatMessage>() {
+        this.watcher = new HeartbeatWatcher(settings, new java.util.function.Consumer<HeartbeatMessage>() {
             public void accept(HeartbeatMessage msg) {
                 self.onForeignHeartbeat(msg);
+            }
+        });
+        this.statusWatcher = new StatusEventWatcher(settings, new Runnable() {
+            public void run() {
+                self.onForeignOffline();
             }
         });
     }
@@ -147,7 +155,9 @@ public class LeaderElector {
         log.info("[{}] LeaderElector starting (weight={}, prepBase={}ms, jitter={}ms, activationTimeout={}ms)",
                 instanceId, ownWeight, prepBaseMs, prepJitterMs, activationTimeoutMs);
 
+        statusPublisher.publish("PREPARING");
         watcher.start();
+        statusWatcher.start();
 
         long jitter    = ThreadLocalRandom.current().nextLong(0, prepJitterMs + 1);
         long prepDelay = prepBaseMs + jitter;
@@ -166,8 +176,11 @@ public class LeaderElector {
 
     /** 리더 선출을 종료한다. 모든 내부 리소스를 정리한다. */
     public void shutdown() {
+        statusPublisher.publish("OFFLINE");
+        statusPublisher.close();   // flush 보장 후 닫음
         scheduler.shutdownNow();
         watcher.stop();
+        statusWatcher.stop();
         publisher.close();
         log.info("[{}] LeaderElector shut down", instanceId);
     }
@@ -197,6 +210,14 @@ public class LeaderElector {
         }
     }
 
+    /** StatusEventWatcher가 외부 인스턴스의 OFFLINE 이벤트 수신 시 호출된다. */
+    private void onForeignOffline() {
+        if (state == State.STANDBY) {
+            log.info("[{}] Foreign OFFLINE 감지 → 즉시 ACTIVE 전환", instanceId);
+            transitionTo(State.ACTIVE);
+        }
+    }
+
     /**
      * HeartbeatWatcher가 외부 인스턴스의 heartbeat 수신 시 호출된다.
      *
@@ -206,13 +227,20 @@ public class LeaderElector {
     private void onForeignHeartbeat(HeartbeatMessage msg) {
         lastForeignHeartbeatMs.set(System.currentTimeMillis());
 
-        if (state != State.ACTIVE) return;
-
-        boolean foreignHasPriority = hasPriorityOver(msg);
-        if (foreignHasPriority) {
-            log.warn("[{}] Split-brain: foreign {} (weight={}) has priority → STANDBY",
-                    instanceId, msg.getInstanceId(), msg.getWeight());
-            transitionTo(State.STANDBY);
+        if (state == State.ACTIVE) {
+            // split-brain: 외부가 나보다 우선순위 높으면 양보
+            if (hasPriorityOver(msg)) {
+                log.warn("[{}] Split-brain: foreign {} (weight={}) has priority → STANDBY",
+                        instanceId, msg.getInstanceId(), msg.getWeight());
+                transitionTo(State.STANDBY);
+            }
+        } else if (state == State.STANDBY) {
+            // 선점: 내 weight가 현재 ACTIVE보다 높으면 가져옴
+            if (!hasPriorityOver(msg)) {
+                log.info("[{}] Preempt: my weight({}) > foreign {}(weight={}) → ACTIVE",
+                        instanceId, ownWeight, msg.getInstanceId(), msg.getWeight());
+                transitionTo(State.ACTIVE);
+            }
         }
     }
 
@@ -238,6 +266,8 @@ public class LeaderElector {
         State prev = state;
         state = next;
         log.info("[{}] {} → {}", instanceId, prev, next);
+
+        statusPublisher.publish(next.name());
 
         if (next == State.ACTIVE) {
             publisher.start();

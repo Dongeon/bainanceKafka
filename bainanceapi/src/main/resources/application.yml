@@ -19,6 +19,13 @@ spring:
     show-sql: false
     open-in-view: false
 
+isetdx:
+  datasource:
+    url: jdbc:mariadb://localhost:33061/isetdx_kafka?serverTimezone=Asia/Seoul
+    username: isetdx_kafka
+    password: isetdx1234
+    driver-class-name: org.mariadb.jdbc.Driver
+
 server:
   port: 8081
 

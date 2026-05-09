@@ -1,11 +1,11 @@
 package org.example;
 
 import org.example.client.BinanceKlineWebSocketClient;
-import org.example.client.BinanceSymbolFetcher;
 import org.example.client.BinanceWebSocketClient;
 import org.example.handler.KlineEventHandler;
 import org.example.handler.TickerEventHandler;
 import org.example.kafka.leader.LeaderElector;
+import org.example.kafka.leader.LeaderSettings;
 import org.example.kafka.producer.GenericKafkaProducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,37 +37,31 @@ public class Main {
 
     private static final Logger log = LoggerFactory.getLogger(Main.class);
 
-    private static final int    TICKER_WS_MAX    = 1024;
-    private static final String DEFAULT_CONFIG   = "kafka.conf";
+    private static final String DEFAULT_CONFIG = "kafka.conf";
+
+    private static final List<String> SYMBOLS = Arrays.asList(
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT",
+            "XRPUSDT", "DOTUSDT", "AVAXUSDT", "ATOMUSDT", "NEARUSDT"
+    );
+    private static final List<String> KLINE_INTERVALS = Arrays.asList("1m", "5m", "15m", "1h");
 
     public static void main(String[] args) throws Exception {
         String configPath = args.length > 0 ? args[0] : DEFAULT_CONFIG;
 
-        // kafka.conf 로드 (Binance 전용 설정 포함)
         Properties conf = loadProperties(configPath);
 
-        // args로 instanceId / weight 오버라이드 가능 (두 인스턴스 실행 시 편의)
         if (args.length >= 2 && !args[1].isBlank()) conf.setProperty("leader.instance.id",     args[1]);
         if (args.length >= 3 && !args[2].isBlank()) conf.setProperty("leader.instance.weight", args[2]);
 
         String instanceId = conf.getProperty("leader.instance.id", "producer-?");
-        log.info("Starting isetdxKafkaProducer: config={}, instanceId={}, weight={}",
-                configPath, instanceId, conf.getProperty("leader.instance.weight", "100"));
+        log.info("Starting isetdxKafkaProducer: config={}, instanceId={}, symbols={}, weight={}",
+                configPath, instanceId, SYMBOLS.size(), conf.getProperty("leader.instance.weight", "100"));
 
-        // ── Binance 설정 읽기 ────────────────────────────────────────────────
-        int          symbolCount  = Integer.parseInt(conf.getProperty("binance.symbol.count",    "10"));
-        List<String> intervals    = Arrays.asList(conf.getProperty("binance.kline.intervals",   "1m,5m,15m,1h").split(","));
-        String       tickerTopic  = conf.getProperty("binance.ticker.topic", "crypto-ticker");
-        String       klineTopic   = conf.getProperty("binance.kline.topic",  "crypto-kline");
-        int          klineWsMax   = TICKER_WS_MAX / intervals.size();
+        String tickerTopic = conf.getProperty("binance.ticker.topic", "crypto-ticker");
+        String klineTopic  = conf.getProperty("binance.kline.topic",  "crypto-kline");
 
-        // ── 심볼 목록 ────────────────────────────────────────────────────────
-        List<String> symbols = symbolCount > 660
-                ? BinanceSymbolFetcher.fetchAllSymbols(symbolCount)
-                : BinanceSymbolFetcher.fetchUsdtSymbols(symbolCount);
-
-        List<String> tickerSymbols = cap(symbols, TICKER_WS_MAX, "Ticker");
-        List<String> klineSymbols  = cap(symbols, klineWsMax,    "Kline");
+        List<String> tickerSymbols = SYMBOLS;
+        List<String> klineSymbols  = SYMBOLS;
 
         // ── IsetDx_kafka-producer-lib ────────────────────────────────────────
         GenericKafkaProducer producer = GenericKafkaProducer.fromConfig(configPath);
@@ -78,14 +72,14 @@ public class Main {
 
         // ── WebSocket 클라이언트 (ACTIVE 전환 시에만 connect) ─────────────────
         BinanceWebSocketClient      tickerClient = new BinanceWebSocketClient(tickerSymbols, tickerHandler);
-        BinanceKlineWebSocketClient klineClient  = new BinanceKlineWebSocketClient(klineSymbols, intervals, klineHandler);
+        BinanceKlineWebSocketClient klineClient  = new BinanceKlineWebSocketClient(klineSymbols, KLINE_INTERVALS, klineHandler);
 
         // ── IsetDx_kafka-leader-lib ──────────────────────────────────────────
         final BinanceWebSocketClient      fTickerClient  = tickerClient;
         final BinanceKlineWebSocketClient fKlineClient   = klineClient;
         final String                      fInstanceId    = instanceId;
 
-        LeaderElector elector = LeaderElector.fromConfig(configPath)
+        LeaderElector elector = LeaderElector.fromSettings(LeaderSettings.fromProperties(conf))
                 .onActivate(new Runnable() {
                     public void run() {
                         log.info("[{}] ACTIVE — Binance WebSocket 연결 시작", fInstanceId);
@@ -138,9 +132,4 @@ public class Main {
         return props;
     }
 
-    private static List<String> cap(List<String> symbols, int max, String label) {
-        if (symbols.size() <= max) return symbols;
-        log.warn("[{}] 심볼 {}개 → WS 한계 {}개로 제한", label, symbols.size(), max);
-        return symbols.subList(0, max);
-    }
 }

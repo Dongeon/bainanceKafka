@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { fetchKlines, fetchLatestTickers } from '../api';
-import { Kline, Ticker } from '../types';
+import { fetchLatestTickers, fetchTickerHistory } from '../api';
+import { Ticker } from '../types';
 import { COINS, INTERVALS } from '../constants';
 import CandlestickChart from '../components/CandlestickChart';
+import PriceHistoryChart from '../components/PriceHistoryChart';
 import IntervalTabs from '../components/IntervalTabs';
 import PriceBadge from '../components/PriceBadge';
 
@@ -17,9 +18,8 @@ function fmtPrice(p: string) {
 export default function CoinDetailPage() {
   const { symbol } = useParams<{ symbol: string }>();
   const [interval, setInterval] = useState('1m');
-  const [klines, setKlines] = useState<Kline[]>([]);
   const [ticker, setTicker] = useState<Ticker | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<Ticker[]>([]);
 
   const coin = COINS.find(c => c.symbol === symbol);
 
@@ -32,20 +32,17 @@ export default function CoinDetailPage() {
 
   useEffect(() => {
     if (!symbol) return;
-    setLoading(true);
-    fetchKlines(symbol, interval, 200)
-      .then(setKlines)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [symbol, interval]);
+    fetchTickerHistory(symbol, 30)
+      .then(setHistory)
+      .catch(() => {});
+  }, [symbol]);
+
 
   if (!coin) return (
     <div className="flex items-center justify-center h-screen text-text-secondary">
       코인을 찾을 수 없습니다.
     </div>
   );
-
-  const lastKline = klines[klines.length - 1];
 
   return (
     <main className="max-w-7xl mx-auto pb-20">
@@ -60,8 +57,8 @@ export default function CoinDetailPage() {
             <div className="flex items-center gap-3 mt-1">
               {ticker ? (
                 <>
-                  <span className="text-3xl font-bold text-text-primary">{fmtPrice(ticker.price)}</span>
-                  <PriceBadge percent={ticker.priceChangePercent} />
+                  <span className="text-3xl font-bold text-text-primary">{fmtPrice(ticker.lastPrice)}</span>
+                  <PriceBadge percent={ticker.priceChangePct} />
                 </>
               ) : (
                 <div className="h-9 w-40 bg-surface-elevated rounded animate-pulse" />
@@ -72,24 +69,12 @@ export default function CoinDetailPage() {
         <IntervalTabs value={interval} options={INTERVALS} onChange={setInterval} />
       </section>
 
-      {/* Chart */}
-      <section className="h-[500px] md:h-[580px] w-full relative bg-bg-base border-y border-border-subtle">
-        {lastKline && (
-          <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-x-5 gap-y-1 bg-surface-default/80 backdrop-blur-sm px-3 py-2 rounded-lg border border-border-subtle text-[11px]">
-            <span className="text-text-secondary">시가 <span className="text-text-primary">{parseFloat(lastKline.open).toLocaleString()}</span></span>
-            <span className="text-text-secondary">고가 <span className="text-status-up font-bold">{parseFloat(lastKline.high).toLocaleString()}</span></span>
-            <span className="text-text-secondary">저가 <span className="text-status-down font-bold">{parseFloat(lastKline.low).toLocaleString()}</span></span>
-            <span className="text-text-secondary">종가 <span className="text-text-primary">{parseFloat(lastKline.close).toLocaleString()}</span></span>
-            <span className="text-text-secondary border-l border-border-subtle pl-4">거래량 <span className="text-text-primary">{parseFloat(lastKline.volume).toFixed(2)}</span></span>
-          </div>
-        )}
-        {loading
-          ? <div className="flex items-center justify-center h-full text-text-secondary">차트 로딩 중...</div>
-          : <CandlestickChart data={klines} />
-        }
+      {/* Candlestick Chart */}
+      <section className="w-full bg-bg-base border-y border-border-subtle">
+        <CandlestickChart symbol={symbol!} interval={interval} />
       </section>
 
-      {/* Bottom */}
+      {/* Stats */}
       <section className="px-4 md:px-6 py-4 grid grid-cols-1 md:grid-cols-4 gap-3">
         <Link
           to={`/analyze/${symbol}`}
@@ -115,7 +100,7 @@ export default function CoinDetailPage() {
               <span className="text-[11px] text-text-secondary block mb-1">24H 거래량</span>
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold text-text-primary">
-                  {parseFloat(ticker.volume).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  {parseFloat(ticker.baseVolume).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
                 <span className="material-symbols-outlined text-status-neutral">bar_chart</span>
               </div>
@@ -129,6 +114,70 @@ export default function CoinDetailPage() {
             </div>
           </>
         )}
+      </section>
+
+      {/* Price History Chart */}
+      {history.length > 0 && (
+        <section className="px-4 md:px-6 py-4">
+          <h2 className="text-sm font-semibold text-text-secondary mb-3 flex items-center gap-2">
+            <span className="material-symbols-outlined text-base">show_chart</span>
+            시세 추이
+          </h2>
+          <div className="h-48 rounded-xl overflow-hidden border border-border-subtle">
+            <PriceHistoryChart data={history} />
+          </div>
+        </section>
+      )}
+
+      {/* Price History List */}
+      <section className="px-4 md:px-6 py-4">
+        <h2 className="text-sm font-semibold text-text-secondary mb-3 flex items-center gap-2">
+          <span className="material-symbols-outlined text-base">history</span>
+          최근 시세 기록
+        </h2>
+        <div className="bg-surface-elevated rounded-xl border border-border-subtle overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border-subtle text-text-secondary text-xs">
+                <th className="text-left px-4 py-3 font-medium">시간</th>
+                <th className="text-right px-4 py-3 font-medium">가격</th>
+                <th className="text-right px-4 py-3 font-medium">변동</th>
+                <th className="text-right px-4 py-3 font-medium hidden md:table-cell">거래량</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="text-center py-8 text-text-secondary text-xs">데이터 없음</td>
+                </tr>
+              ) : (
+                [...history].reverse().map((h, i) => {
+                  const change = parseFloat(h.priceChange);
+                  const pct = parseFloat(h.priceChangePct);
+                  const isUp = change >= 0;
+                  return (
+                    <tr key={i} className="border-b border-border-subtle/40 last:border-0 hover:bg-surface-container/50 transition-colors">
+                      <td className="px-4 py-3 text-text-secondary font-mono text-xs">
+                        {h.createdAt?.substring(11, 19) ?? '-'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-text-primary font-mono">
+                        {fmtPrice(h.lastPrice)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className={`font-mono text-xs font-semibold ${isUp ? 'text-status-up' : 'text-status-down'}`}>
+                          {isUp ? '+' : ''}{pct.toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-text-secondary font-mono text-xs hidden md:table-cell">
+                        {parseFloat(h.baseVolume).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
   );
